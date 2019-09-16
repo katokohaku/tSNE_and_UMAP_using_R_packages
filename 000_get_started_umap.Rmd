@@ -1,0 +1,309 @@
+---
+author: "Satoshi Kato"
+title: "get started: UMAP with uwot"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  html_document:
+    fig_caption: yes
+    pandoc_args:
+      - --from
+      - markdown+autolink_bare_uris+tex_math_single_backslash-implicit_figures
+    keep_md: yes
+    toc: yes
+  word_document:
+    toc: yes
+    toc_depth: 3
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(progress = TRUE, 
+                     verbose  = TRUE, 
+                     root.dir = ".")
+
+knitr::opts_chunk$set(collapse = TRUE, 
+                      comment = "", 
+                      message = TRUE, 
+                      warning = FALSE, 
+                      include = TRUE,
+                      echo    = TRUE)
+
+set.seed(1)
+```
+
+```{r install.requirements, eval = FALSE}
+install.packages("Rtsne", dependencies = TRUE)
+install.packages("uwot", dependencies = TRUE)
+install.packages("ggdendro", dependencies = TRUE)
+install.packages("ggrepel", dependencies = TRUE)
+
+```
+
+```{r require.packages, message=FALSE}
+require(tidyverse)
+require(magrittr)
+require(xgboost)
+
+require(Rtsne)
+require(uwot)
+library(ggdendro)
+require(ggrepel)
+
+```
+
+# Preparation 
+
+Optical Recognition of Handwritten Digits Data Set
+
+https://archive.ics.uci.edu/ml/datasets/Optical+Recognition+of+Handwritten+Digits
+
+```{r load.data}
+optdigits.tra  <- read.table("./input/optdigits.tra.csv", sep = ",", header = FALSE)
+
+train.label  <- optdigits.tra[, 65]
+train.matrix <- optdigits.tra[, -65] %>% as.matrix
+
+```
+
+## dimension reduction using UMAP
+
+according to :
+https://rdrr.io/cran/uwot/man/umap.html
+
+
+### non-optional
+
+```{r}
+optdigits.umap <- train.matrix %>% 
+  uwot::umap()
+
+# optdigits.umap %>% str
+
+mapping.umap <- data.frame(
+  id     = 1:length(optdigits.umap),
+  dim1  = optdigits.umap[, 1],
+  dim2  = optdigits.umap[, 2],
+  label = as.factor(train.label))
+
+labels.cent <- mapping.umap %>% 
+  dplyr::group_by(label) %>%
+  select(dim1, dim2) %>% 
+  summarize_all(mean)
+
+ggp.umap <- mapping.umap %>% 
+  ggplot(aes(x = dim1, y = dim2, colour = label)) + 
+  geom_point(alpha = 0.3) + 
+  theme_bw() +
+  ggrepel::geom_label_repel(data = labels.cent,
+                            aes(label = label),
+                            label.size = 0.1) +
+  guides(colour = FALSE) +
+  labs(title = "non-supervised UMAP (with TRUE labels)") 
+
+ggsave(ggp.umap, filename =  "./output/010_umap_unsupervised_with_label.png",
+       height = 5, width = 5)
+
+```
+
+![](output/010_umap_unsupervised_with_label.png)
+
+### supervised dimension reduction
+
+```{r}
+optdigits.sumap <- train.matrix %>% 
+ uwot::umap(y = train.label)
+
+mapping.sumap <- data.frame(
+  id     = 1:length(optdigits.sumap),
+  dim1  = optdigits.sumap[, 1],
+  dim2  = optdigits.sumap[, 2],
+  label = as.factor(train.label))
+
+labels.cent <- mapping.sumap %>% 
+  dplyr::group_by(label) %>%
+  select(dim1, dim2) %>% 
+  summarize_all(mean)
+
+ggp.sumap <- mapping.sumap %>% 
+  ggplot(aes(x = dim1, y = dim2, colour = label)) + 
+  geom_point(alpha = 0.3) + 
+  theme_bw() +
+  ggrepel::geom_label_repel(data = labels.cent,
+                            aes(label = label),
+                            label.size = 0.1) +
+  guides(colour = FALSE) +
+  labs(title = "supervised UMAP") 
+
+# ggsave(ggp.sumap, filename = "./output/010_umap_supervised_with_label.png",
+#        height = 5, width = 5)
+
+```
+
+![](output/010_umap_unsupervised_with_label.png)
+
+## Hierarchical Density-based spatial clustering of applications with noise (HDBSCAN)
+
+Reference:
+
+https://hdbscan.readthedocs.io/en/latest/how_hdbscan_works.html
+
+according to:
+
+https://cran.r-project.org/web/packages/dbscan/vignettes/hdbscan.html
+
+```{r}
+# install.packages("dbscan", dependencies = TRUE)
+require(dbscan)
+
+```
+
+`minPts` not only acts as a minimum cluster size to detect, but also as a "smoothing" factor of the density estimates implicitly computed from HDBSCAN.
+
+```{r }
+# mapping.sumap %>% str
+cl.hdbscan <- mapping.sumap %>% 
+  select(dim1, dim2) %>% 
+  hdbscan(minPts = 30)
+cl.hdbscan
+
+plot(cl.hdbscan, show_flat = TRUE)
+
+```
+
+```{r}
+# install.packages("ggrepel", dependencies = TRUE)
+require(ggrepel)
+
+mapping.sumap$hdbscan <- factor(cl.hdbscan$cluster)
+
+hdbscan.cent <- mapping.sumap %>% 
+  filter(hdbscan != 0) %>% 
+  dplyr::group_by(hdbscan) %>%
+  select(dim1, dim2) %>% 
+  summarize_all(mean)
+
+ggp.sumap.labeled <- mapping.sumap %>% 
+  ggplot(aes(x = dim1, y = dim2, colour = hdbscan)) + 
+  geom_point(alpha = 0.3) + 
+  theme_bw() +
+  ggrepel::geom_label_repel(data = hdbscan.cent, 
+                            aes(label = hdbscan),
+                            label.size = 0.1) + 
+  guides(colour = FALSE) + 
+  labs(title = "supervised UMAP + HDBSCAN") 
+
+
+ggsave(ggp.sumap.labeled, filename =  "./output/image.files/420_map_sumap_labeled.png",
+    height = 7, width = 7)
+
+```
+
+![](output/image.files/420_map_sumap_labeled.png)
+
+```{r, fig.height=7, fig.width=7, results="hide"}
+ggp.tsne.sumap <- gridExtra::arrangeGrob(
+  ggp.tsne, 
+  ggp.umap,
+  ggp.sumap, 
+  ggp.sumap.labeled,
+  ncol = 2)
+
+ggsave(ggp.tsne.sumap, filename =  "./output/image.files/420_tSNE_sumap.png",
+    height = 10, width = 10)
+
+```
+
+![](output/image.files/420_tSNE_sumap.png)
+
+
+# View rules in a cluster
+
+NOTE: observations with `hdbscan == 0` are as noise by hDBSCAN.
+
+```{r}
+clust.id = 1
+sample.n = 12
+
+target <- mapping.sumap %>% 
+  filter(hdbscan == clust.id) %>% 
+  arrange(desc(pred))
+
+sw <- list(NULL)
+for(i in 1:sample.n){
+  idx = target$id[i]
+  
+  sw[[i]]  <- waterfallBreakdown(
+    breakdown = unlist(optdigits[idx, ]),
+    type = "binary",
+    labels = paste(colnames(optdigits), 
+                   c(train.matrix[idx, ],""), sep =" = ")) +
+    ggtitle(sprintf("predict = %.04f\nweight = %.04f",
+                    target$predict[i], target$weight[i]))
+}
+
+ggp.sw <- gridExtra::arrangeGrob(grobs = sw, ncol = 4)
+ggsave(ggp.sw, height = 9,
+       filename = "./output/image.files/420_rules_cl1.png")
+```
+
+![](./output/image.files/420_rules_cl1.png)
+## summarise for each contribution
+
+```{r}
+# 
+require(ggridges)
+
+# optdigits %>% str
+feature.value.long <- train.matrix %>% 
+  scale() %>%
+  data.frame() %>% 
+  mutate(id = as.character(1:n())) %>% 
+  gather(key = feature, value = value, -id)
+
+feature.impact.long <- optdigits[target$id, ] %>% 
+  data.frame(id = as.character(target$id)) %>% 
+  select(-BIAS) %>% 
+  gather(key = feature, value = impact, -id) %>% 
+  left_join(feature.value.long, by = c("id", "feature")) %>% 
+  mutate(feature = factor(feature))
+
+
+
+ggp.impact <- feature.impact.long %>% 
+  ggplot(aes(x = impact, y = feature, point_color = value, fill = feature))+
+  geom_density_ridges(
+    jittered_points = TRUE, 
+    position = "raincloud",
+    alpha = 0.7, 
+    scale = 0.9
+  ) +
+  guides(label = FALSE,colour = FALSE) + 
+  scale_color_gradient(low="#FFCC33", high="#6600CC", labels=c("Low","High")) +
+  theme(legend.position = 'none') +
+  labs(title = "feature contribution", x="", y="")
+
+ggp.contribution <- feature.impact.long %>% 
+  ggplot(aes(x = value, y = feature, point_color = value, fill = feature))+
+  geom_density_ridges(
+    jittered_points = TRUE, 
+    position = "raincloud",
+    alpha = 0.7, 
+    scale = 0.9
+  ) +
+  guides(label = FALSE,colour = FALSE) + 
+  scale_color_gradient(low="#FFCC33", high="#6600CC", labels=c("Low","High")) +
+  theme(legend.position = 'none') +
+  labs(title = "feature value", x="", y="")
+
+ggp.fcl <- gridExtra::arrangeGrob(grobs = list(ggp.contribution, ggp.impact), ncol = 2)
+ggsave(ggp.fcl, width = 9, height = 6,
+       filename = "./output/image.files/420_stratified_clustering_cl1.png")
+
+```
+
+![](./output/image.files/420_stratified_clustering_cl1.png)
+
