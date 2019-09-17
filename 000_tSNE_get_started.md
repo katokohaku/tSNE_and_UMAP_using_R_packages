@@ -1,7 +1,7 @@
 ---
 author: "Satoshi Kato"
 title: "get started: tSNE with Rtsne"
-date: "2019/09/16"
+date: "2019/09/17"
 output:
   html_document:
     fig_caption: yes
@@ -63,62 +63,84 @@ according to :
 http://jmonlong.github.io/Hippocamplus/2017/12/02/tsne-and-clustering/
 
 
+
+```r
+plot.tsne <- function(.tsne, label = NULL, title = "") {
+  
+  mapping <- data.frame(
+  id    = 1:NROW(.tsne$Y),
+  dim1  = .tsne$Y[, 1],
+  dim2  = .tsne$Y[, 2])
+  
+  ggp <- mapping %>% 
+    ggplot(aes(x = dim1, y = dim2, colour = label)) + 
+    geom_point(alpha = 0.3) + 
+    theme_bw() +
+    guides(colour = FALSE) +
+    labs(title = title)
+  
+  if(!is.null(label)){
+    mapping$label = label
+    
+    labels.cent <- mapping %>% 
+      dplyr::group_by(label) %>%
+      select(dim1, dim2) %>% 
+      summarize_all(mean)
+    
+    ggp <- ggp +
+      ggrepel::geom_label_repel(data = labels.cent,
+                                aes(label = label),
+                                label.size = 0.1)
+  }
+  
+  invisible(
+    list(
+      plot = ggp,
+      mapping = mapping
+    )
+  )
+}
+```
+
+
 ```r
 # optdigits %>% str
 
 optdigits.tsne <- train.matrix %>% 
-  Rtsne::Rtsne(perplexity = 50, check_duplicates = FALSE)
+  Rtsne::Rtsne()
 
-# optdigits.tsne %>% str
-
-mapping.tsne <- data.frame(
-  id    = 1:NROW(optdigits.tsne$Y),
-  dim1  = optdigits.tsne$Y[, 1],
-  dim2  = optdigits.tsne$Y[, 2],
-  label = as.factor(train.label))
-
-labels.cent <- mapping.tsne %>% 
-  dplyr::group_by(label) %>%
-  select(dim1, dim2) %>% 
-  summarize_all(mean)
+ggp.tsne <- optdigits.tsne %>% 
+  plot.tsne(
+    label = as.factor(train.label),
+    title = "tSNE (with TRUE labels)")
 Adding missing grouping variables: `label`
 
-ggp.tsne <- mapping.tsne %>% 
-  ggplot(aes(x = dim1, y = dim2, colour = label)) + 
-  geom_point(alpha = 0.3) + 
-  theme_bw() +
-  ggrepel::geom_label_repel(data = labels.cent,
-                            aes(label = label),
-                            label.size = 0.1) +
-  guides(colour = FALSE) +
-  labs(title = "tSNE (with TRUE labels)") 
-
-ggsave(ggp.tsne, filename =  "./output/000_tSNE.png",
-       height = 5, width = 5)
+ggsave(ggp.tsne$plot, filename =  "./output/000_tSNE.png",
+       height = 4, width = 4)
 ```
 
 ![](output/000_tSNE.png)
 
 
 ```r
-ggp.tsne.nolabel <- mapping.tsne %>% 
-  ggplot(aes(x = dim1, y = dim2, colour = 0)) + 
-  geom_point(alpha = 0.3) + 
-  theme_bw() +
-  guides(colour = FALSE) +
-  labs(title = "tSNE (without labels)") 
+ggp.tsne.nolabel <- optdigits.tsne %>% 
+  plot.tsne(
+    # label = as.factor(train.label),
+    title = "tSNE (without labels)")
+# optdigits.tsne %>% str
+# ggp.tsne.nolabel$plot
 
-ggsave(ggp.tsne.nolabel, filename =  "./output/000_tSNE_nolabel.png",
-       height = 5, width = 5)
+ggsave(ggp.tsne.nolabel$plot, filename =  "./output/000_tSNE_nolabel.png",
+       height = 4, width = 4)
 ```
 
 ![](output/000_tSNE_nolabel.png)
 
-## Hierarchical clustering
+# Hierarchical clustering
 
 
 ```r
-optdigits.tsne.hc <- mapping.tsne %>% 
+optdigits.tsne.hc <- ggp.tsne.nolabel$mapping %>% 
   select(-id) %>% 
   as.matrix() %>% 
   dist() %>% 
@@ -133,19 +155,19 @@ Distance         : euclidean
 Number of objects: 3823 
 ```
 
-### explore cut.off for cutree
+## explore cut.off for cutree
 
 
 ```r
 library(ggdendro)
 
-cut.off = 25
+cut.off = 27
 
 ggd.tsne.hc <- ggdendrogram(optdigits.tsne.hc, rotate = TRUE, size = 2) +
   geom_hline(yintercept = cut.off, color = "red")
 
 ggsave(ggd.tsne.hc, filename =  "./output/000_tsne_hclust.png",
-    height = 5, width = 5)
+    height = 4, width = 4)
 ```
 
 ![](./output/000_tsne_hclust.png)
@@ -154,39 +176,31 @@ ggsave(ggd.tsne.hc, filename =  "./output/000_tsne_hclust.png",
 ```r
 require(ggrepel)
 
-mapping.tsne$hclust <- optdigits.tsne.hc %>%
+group.by.hclust <- optdigits.tsne.hc %>%
   cutree(h = cut.off) %>%
   factor()
 
-hc.cent <- mapping.tsne %>% 
-  group_by(hclust) %>%
-  select(dim1, dim2) %>% 
-  summarize_all(mean)
-Adding missing grouping variables: `hclust`
+ggp.tsne.hc <- optdigits.tsne %>% 
+  plot.tsne(
+    label = as.factor(LETTERS[group.by.hclust]),
+    title = "tSNE (group by hclast)")
+Adding missing grouping variables: `label`
 
-ggp.tsne.hc <- mapping.tsne %>% 
-  ggplot(aes(x = dim1, y = dim2, colour = hclust)) + 
-  geom_point(alpha = 0.3) + 
-  theme_bw() +
-  ggrepel::geom_label_repel(data = hc.cent,
-                            aes(label = LETTERS[hclust])) + 
-  guides(colour = FALSE) +
-  labs(title = "tSNE (group by hclast)") 
+# ggp.tsne.hc$plot
 ```
 
 
 ```r
 ggp.tsne.compare <- gridExtra::arrangeGrob(
   grobs = list(
-    ggp.tsne, ggp.tsne.hc
+    ggp.tsne$plot, ggp.tsne.hc$plot
   ),
   ncol = 2
 )
 
 ggsave(ggp.tsne.compare, filename =  "./output/000_tSNE_compare.png",
-       height = 5, width = 10)
+       height = 4, width = 8)
 ```
 
 ![](output/000_tSNE_compare.png)
-
 
