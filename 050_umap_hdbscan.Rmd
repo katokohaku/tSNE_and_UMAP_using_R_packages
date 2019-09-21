@@ -76,14 +76,13 @@ https://rdrr.io/cran/uwot/man/umap.html
 
 
 # With no option
-
 ```{r}
 plot.umap <- function(.umap, label = NULL, title = "") {
   
   mapping.umap <- data.frame(
-    id     = 1:NROW(.umap),
-    dim1  = .umap[, 1],
-    dim2  = .umap[, 2])
+    id     = 1:NROW(optdigits.umap),
+    dim1  = optdigits.umap[, 1],
+    dim2  = optdigits.umap[, 2])
   
   ggp.umap <- mapping.umap %>% 
     ggplot(aes(x = dim1, y = dim2, colour = label)) + 
@@ -93,7 +92,7 @@ plot.umap <- function(.umap, label = NULL, title = "") {
     labs(title = title)
   
   if(!is.null(label)){
-    mapping.umap$label = label
+    mapping.umap$label = as.factor(train.label)
     
     labels.cent <- mapping.umap %>% 
       dplyr::group_by(label) %>%
@@ -105,7 +104,6 @@ plot.umap <- function(.umap, label = NULL, title = "") {
                                 aes(label = label),
                                 label.size = 0.1)
   }
-  
   invisible(
     list(
       plot = ggp.umap,
@@ -125,7 +123,7 @@ ggp.umap <- optdigits.umap %>%
     title = "non-supervised UMAP (with TRUE labels)" )
 # 
 ggsave(ggp.umap$plot, filename =  "./output/010_umap_unsupervised_with_label.png",
-       height = 4, width = 4)
+       height = 5, width = 5)
 
 ```
 
@@ -143,8 +141,68 @@ ggp.sumap <- optdigits.sumap %>%
     title = "supervised UMAP (with TRUE labels)" )
 # 
 ggsave(ggp.sumap$plot, filename =  "./output/010_umap_supervised_with_label.png",
-       height = 4, width = 4)
+       height = 5, width = 5)
 
 ```
 
 ![](output/010_umap_supervised_with_label.png)
+
+## Hierarchical Density-based spatial clustering of applications with noise (HDBSCAN)
+
+Reference:
+
+https://hdbscan.readthedocs.io/en/latest/how_hdbscan_works.html
+
+according to:
+
+https://cran.r-project.org/web/packages/dbscan/vignettes/hdbscan.html
+
+```{r}
+# install.packages("dbscan", dependencies = TRUE)
+require(dbscan)
+
+```
+
+`minPts` not only acts as a minimum cluster size to detect, but also as a "smoothing" factor of the density estimates implicitly computed from HDBSCAN.
+
+```{r }
+# mapping.sumap %>% str
+cl.hdbscan <- mapping.sumap %>% 
+  select(dim1, dim2) %>% 
+  hdbscan()
+cl.hdbscan
+
+plot(cl.hdbscan, show_flat = TRUE)
+
+```
+
+```{r}
+# install.packages("ggrepel", dependencies = TRUE)
+require(ggrepel)
+
+mapping.sumap$hdbscan <- factor(cl.hdbscan$cluster)
+
+hdbscan.cent <- mapping.sumap %>% 
+  filter(hdbscan != 0) %>% 
+  dplyr::group_by(hdbscan) %>%
+  select(dim1, dim2) %>% 
+  summarize_all(mean)
+
+ggp.sumap.hdbscan <- mapping.sumap %>% 
+  ggplot(aes(x = dim1, y = dim2, colour = hdbscan)) + 
+  geom_point(alpha = 0.3) + 
+  theme_bw() +
+  ggrepel::geom_label_repel(data = hdbscan.cent, 
+                            aes(label = hdbscan),
+                            label.size = 0.1) + 
+  guides(colour = FALSE) + 
+  labs(title = "supervised UMAP + HDBSCAN") 
+
+
+ggsave(ggp.sumap.hdbscan, filename =  "./output/010_map_sumap_hdbscan.png",
+       height = 7, width = 7)
+
+```
+
+![](output/010_map_sumap_hdbscan.png)
+
