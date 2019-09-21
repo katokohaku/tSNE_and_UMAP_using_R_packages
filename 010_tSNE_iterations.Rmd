@@ -1,0 +1,125 @@
+---
+author: "Satoshi Kato"
+title: "Effect of t-SNE iteration"
+date: "`r format(Sys.time(), '%Y/%m/%d')`"
+output:
+  html_document:
+    fig_caption: yes
+    pandoc_args:
+      - --from
+      - markdown+autolink_bare_uris+tex_math_single_backslash-implicit_figures
+    keep_md: yes
+    toc: yes
+  word_document:
+    toc: yes
+    toc_depth: 3
+  pdf_document:
+    toc: yes
+    toc_depth: 3
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(progress = TRUE, 
+                     verbose  = TRUE, 
+                     root.dir = ".")
+
+knitr::opts_chunk$set(collapse = TRUE, 
+                      comment = "#> ", 
+                      message = TRUE, 
+                      warning = FALSE, 
+                      include = TRUE,
+                      echo    = TRUE)
+
+require(tidyverse)
+require(Rtsne)
+
+```
+
+# reference
+
+How to Use t-SNE Effectively
+
+https://distill.pub/2016/misread-tsne/
+
+Using MNIST (test set) as csv fromat was downloaded from :
+
+https://github.com/pjreddie/mnist-csv-png
+
+```{r}
+set.seed(1)
+load("./input/mnist_sample.rda")
+
+train.label  <- mnist.sample[,  1]
+train.matrix <- mnist.sample[, -1] %>% as.matrix
+
+n <- NROW(train.matrix)
+train.matrix %>% str(0)
+
+```
+
+```{r, eval = TRUE}
+res <- list(NULL)
+
+n.iter <- c(10, 50, 100, 150, 100*2:7, 1000, 1500, 2000, 4000)
+add.iter <- n.iter - c(0, n.iter)[1:length(n.iter)]
+
+res.tsne <- Rtsne::Rtsne(train.matrix, 
+                  verbose = TRUE, 
+                  num_threads = 5,
+                  # theta=0.0, 
+                  pca=FALSE, 
+                  perplexity = 30, 
+                  max_iter = n.iter[1])
+
+res[[1]] <- data.frame(iteration = n.iter[1],
+                       Y1 = res.tsne$Y[,1],
+                       Y2 = res.tsne$Y[,2],
+                       label = train.label)
+i = 2
+for(i in 2:length(add.iter)){
+  cat(sprintf("%i: %i\n", i, n.iter[i]))
+  system.time(
+    res.tsne <- Rtsne::Rtsne(train.matrix, 
+                             verbose = TRUE, 
+                             num_threads = 5,
+                             # theta=0.0, 
+                             pca = FALSE, 
+                             perplexity = 30, 
+                             max_iter = n.iter[i],
+                             Y_init = res[[i - 1]]$Y)
+    
+  )
+
+  res[[i]] <- data.frame(iteration = n.iter[i],
+                         Y1 = res.tsne$Y[,1],
+                         Y2 = res.tsne$Y[,2],
+                         label = train.label)
+
+}
+
+res %>% str(2)
+
+saveRDS(res, file = "./output/maxIter_mnist.Rds")
+```
+
+# plot
+
+```{r}
+res <- readRDS("./output/maxIter_mnist.Rds")
+
+for(i in 1:NROW(res)){
+  this.i <- res[[i]]$iteration[1]
+  print(this.i)
+
+  ggp.map.this <- res[[i]] %>% 
+    ggplot(aes(x = Y1, y = Y2, color = factor(label))) +
+    geom_point(alpha = 0.3) +
+    labs(title = paste("iteration = ", this.i)) +
+    theme(legend.position = "none")
+  ggsave(filename = sprintf("./output/iter_size/iter_%04i.png", this.i))
+}
+
+```
+
