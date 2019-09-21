@@ -1,7 +1,7 @@
 ---
 author: "Satoshi Kato"
 title: "get started: tSNE with Rtsne"
-date: "`r format(Sys.time(), '%Y/%m/%d')`"
+date: "2019/09/20"
 output:
   html_document:
     fig_caption: yes
@@ -20,22 +20,10 @@ editor_options:
   chunk_output_type: inline
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_knit$set(progress = TRUE, 
-                     verbose  = TRUE, 
-                     root.dir = ".")
 
-knitr::opts_chunk$set(collapse = TRUE, 
-                      comment = "#> ", 
-                      message = TRUE, 
-                      warning = FALSE, 
-                      include = TRUE,
-                      echo    = TRUE)
 
-set.seed(1)
-```
 
-```{r install.requirements, eval = FALSE}
+```r
 install.packages("Rtsne", dependencies = TRUE)
 install.packages("uwot", dependencies = TRUE)
 install.packages("ggdendro", dependencies = TRUE)
@@ -43,7 +31,8 @@ install.packages("ggrepel", dependencies = TRUE)
 
 ```
 
-```{r require.packages, message=FALSE}
+
+```r
 require(tidyverse)
 require(magrittr)
 
@@ -51,21 +40,30 @@ require(Rtsne)
 require(uwot)
 library(ggdendro)
 require(ggrepel)
-
 ```
 
 # Preparation 
 
-Optical Recognition of Handwritten Digits Data Set
 
-https://archive.ics.uci.edu/ml/datasets/Optical+Recognition+of+Handwritten+Digits
+Using MNIST (test set) as csv fromat was downloaded from :
 
-```{r load.data}
-optdigits.tra  <- read.table("./input/optdigits.tra.csv", sep = ",", header = FALSE)
+https://github.com/pjreddie/mnist-csv-png
 
-train.label  <- optdigits.tra[, 65]
-train.matrix <- optdigits.tra[, -65] %>% as.matrix
 
+```r
+set.seed(1)
+
+require(tidyverse)
+require(Rtsne)
+load("./input/mnist_sample.rda")
+
+train.label  <- mnist.sample[,  1]
+train.matrix <- mnist.sample[, -1] %>% as.matrix
+
+n <- NROW(train.matrix)
+train.matrix %>% str(0)
+ int [1:10000, 1:784] 0 0 0 0 0 0 0 0 0 0 ...
+ - attr(*, "dimnames")=List of 2
 ```
 
 # dimension reduction using t-SNE
@@ -74,13 +72,34 @@ according to :
 http://jmonlong.github.io/Hippocamplus/2017/12/02/tsne-and-clustering/
 
 
-```{r}
+```r
+zeros.col <- which(colSums(train.matrix) == 0)
+map.pca <- prcomp(x = train.matrix[, -zeros.col], scale = TRUE)
+ggp.pca <- data.frame(
+  dim1  = map.pca$x[, 1],
+  dim2  = map.pca$x[, 2],
+  label = as.factor(train.label)) %>% 
+  ggplot(aes(x = dim1, y = dim2, colour = label)) + 
+  geom_point(alpha = 0.3) + 
+  theme_bw() +
+  guides(colour = FALSE) +
+  labs(title = "PCA")
+
+ggsave(ggp.pca, filename =  "./output/000_PCA.png",
+       height = 4, width = 4)
+```
+
+![](output/000_PCA.png)
+
+
+
+```r
 plot.tsne <- function(.tsne, label = NULL, title = "") {
   
   mapping <- data.frame(
-  id    = 1:NROW(.tsne$Y),
-  dim1  = .tsne$Y[, 1],
-  dim2  = .tsne$Y[, 2])
+    id    = 1:NROW(.tsne$Y),
+    dim1  = .tsne$Y[, 1],
+    dim2  = .tsne$Y[, 2])
   
   ggp <- mapping %>% 
     ggplot(aes(x = dim1, y = dim2, colour = label)) + 
@@ -112,84 +131,94 @@ plot.tsne <- function(.tsne, label = NULL, title = "") {
 }
 ```
 
-```{r}
-# optdigits %>% str
 
-optdigits.tsne <- train.matrix %>% 
-  Rtsne::Rtsne(verbose = TRUE)
+```r
 
-ggp.tsne <- optdigits.tsne %>% 
+mapping.tsne <- train.matrix %>% 
+  Rtsne::Rtsne()
+
+ggp.tsne <- mapping.tsne %>% 
   plot.tsne(
     label = as.factor(train.label),
     title = "tSNE (with TRUE labels)")
+Adding missing grouping variables: `label`
 
 ggsave(ggp.tsne$plot, filename =  "./output/000_tSNE.png",
        height = 4, width = 4)
-
 ```
 
 ![](output/000_tSNE.png)
 
-```{r}
-ggp.tsne.nolabel <- optdigits.tsne %>% 
+
+```r
+ggp.tsne.nolabel <- mapping.tsne %>% 
   plot.tsne(
     # label = as.factor(train.label),
     title = "tSNE (without labels)")
-# optdigits.tsne %>% str
+# mapping.tsne %>% str
 # ggp.tsne.nolabel$plot
 
 ggsave(ggp.tsne.nolabel$plot, filename =  "./output/000_tSNE_nolabel.png",
        height = 4, width = 4)
-
 ```
 
 ![](output/000_tSNE_nolabel.png)
 
 # Hierarchical clustering
 
-```{r }
-optdigits.tsne.hc <- ggp.tsne.nolabel$mapping %>% 
+
+```r
+mapping.tsne.hc <- ggp.tsne.nolabel$mapping %>% 
   select(-id) %>% 
   as.matrix() %>% 
   dist() %>% 
   hclust()
-optdigits.tsne.hc
+mapping.tsne.hc
+
+Call:
+hclust(d = .)
+
+Cluster method   : complete 
+Distance         : euclidean 
+Number of objects: 10000 
 ```
 
 ## explore cut.off for cutree
 
-```{r}
+
+```r
 library(ggdendro)
 
 cut.off = 27
 
-ggd.tsne.hc <- ggdendrogram(optdigits.tsne.hc, rotate = TRUE, size = 2) +
+ggdend.tsne.hc <- ggdendrogram(mapping.tsne.hc, rotate = TRUE, size = 2) +
   geom_hline(yintercept = cut.off, color = "red")
 
-ggsave(ggd.tsne.hc, filename =  "./output/000_tsne_hclust.png",
-    height = 4, width = 4)
-
+ggsave(ggdend.tsne.hc, filename =  "./output/000_tsne_hclust.png",
+       height = 4, width = 4)
 ```
 
 ![](./output/000_tsne_hclust.png)
 
-```{r}
+
+```r
 require(ggrepel)
 
-group.by.hclust <- optdigits.tsne.hc %>%
+group.by.hclust <- mapping.tsne.hc %>%
   cutree(h = cut.off) %>%
   factor()
 
-ggp.tsne.hc <- optdigits.tsne %>% 
+ggp.tsne.hc <- mapping.tsne %>% 
   plot.tsne(
     label = as.factor(LETTERS[group.by.hclust]),
     title = "tSNE (group by hclast)")
+Adding missing grouping variables: `label`
 
 # ggp.tsne.hc$plot
-
 ```
 
-```{r, fig.height=7, fig.width=7, results="hide"}
+
+```r
 ggp.tsne.compare <- gridExtra::arrangeGrob(
   grobs = list(
     ggp.tsne$plot, ggp.tsne.hc$plot
@@ -199,7 +228,6 @@ ggp.tsne.compare <- gridExtra::arrangeGrob(
 
 ggsave(ggp.tsne.compare, filename =  "./output/000_tSNE_compare.png",
        height = 4, width = 8)
-
 ```
 
 ![](output/000_tSNE_compare.png)
