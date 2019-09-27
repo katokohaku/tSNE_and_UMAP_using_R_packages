@@ -65,13 +65,14 @@ res <- list(NULL)
 n.iter <- c(10, 50, 100, 150, 100*2:7, 1000, 1500, 2000, 4000)
 add.iter <- n.iter - c(0, n.iter)[1:length(n.iter)]
 
-res.tsne <- Rtsne::Rtsne(train.matrix, 
-                  verbose = TRUE, 
-                  num_threads = 5,
-                  # theta=0.0, 
-                  pca=FALSE, 
-                  perplexity = 30, 
-                  max_iter = n.iter[1])
+res.tsne <- Rtsne::Rtsne(
+  train.matrix, 
+  verbose = TRUE, 
+  num_threads = 5,
+  # theta=0.0, 
+  pca=FALSE, 
+  perplexity = 50, 
+  max_iter = n.iter[1])
 
 res[[1]] <- data.frame(iteration = n.iter[1],
                        Y1 = res.tsne$Y[,1],
@@ -83,7 +84,7 @@ for(i in 2:length(add.iter)){
   system.time(
     res.tsne <- Rtsne::Rtsne(train.matrix, 
                              verbose = TRUE, 
-                             num_threads = 5,
+                             num_threads = 7,
                              # theta=0.0, 
                              pca = FALSE, 
                              perplexity = 30, 
@@ -115,10 +116,12 @@ for(i in 1:NROW(res)){
 
   ggp.map.this <- res[[i]] %>% 
     ggplot(aes(x = Y1, y = Y2, color = factor(label))) +
-    geom_point(alpha = 0.3) +
+    geom_point(alpha = 0.5, size = 0.2) + 
+    theme_bw() +
     labs(title = paste("iteration = ", this.i)) +
     theme(legend.position = "none")
-  ggsave(filename = sprintf("./output/iter_size/iter_%04i.png", this.i))
+  ggsave(filename = sprintf("./output/iter_size/iter_%04i.png", this.i),
+         height = 4, width = 4)
 }
 
 ```

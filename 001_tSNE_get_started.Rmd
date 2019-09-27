@@ -1,6 +1,6 @@
 ---
 author: "Satoshi Kato"
-title: "get started: tSNE with Rtsne"
+title: "get started: t-SNE with Rtsne"
 date: "`r format(Sys.time(), '%Y/%m/%d')`"
 output:
   html_document:
@@ -26,7 +26,7 @@ knitr::opts_knit$set(progress = TRUE,
                      root.dir = ".")
 
 knitr::opts_chunk$set(collapse = TRUE, 
-                      comment = "", 
+                      comment = "#> ", 
                       message = TRUE, 
                       warning = FALSE, 
                       include = TRUE,
@@ -88,7 +88,7 @@ ggp.pca <- data.frame(
   dim2  = map.pca$x[, 2],
   label = as.factor(train.label)) %>% 
   ggplot(aes(x = dim1, y = dim2, colour = label)) + 
-  geom_point(alpha = 0.3) + 
+  geom_point(alpha = 0.3, size = 0.2) + 
   theme_bw() +
   guides(colour = FALSE) +
   labs(title = "PCA")
@@ -110,7 +110,7 @@ plot.tsne <- function(.tsne, label = NULL, title = "") {
   
   ggp <- mapping %>% 
     ggplot(aes(x = dim1, y = dim2, colour = label)) + 
-    geom_point(alpha = 0.3) + 
+    geom_point(alpha = 0.5, size = 0.2) + 
     theme_bw() +
     guides(colour = FALSE) +
     labs(title = title)
@@ -139,36 +139,62 @@ plot.tsne <- function(.tsne, label = NULL, title = "") {
 ```
 
 ```{r}
-
 mapping.tsne <- train.matrix %>% 
-  Rtsne::Rtsne()
+  Rtsne::Rtsne(verbose = TRUE, num_threads = 4)
 
-ggp.tsne <- mapping.tsne %>% 
-  plot.tsne(
-    label = as.factor(train.label),
-    title = "tSNE (with TRUE labels)")
+```
+```{r}
+mapping.tsne %>% str()
+```
 
-ggsave(ggp.tsne$plot, filename =  "./output/000_tSNE.png",
+```{r}
+mapping <- data.frame(
+  id    = 1:NROW(mapping.tsne$Y),
+  dim1  = mapping.tsne$Y[, 1],
+  dim2  = mapping.tsne$Y[, 2],
+  label = as.factor(train.label))
+
+ggp <- mapping %>% 
+  ggplot(aes(x = dim1, y = dim2, colour = label)) + 
+  geom_point(alpha = 0.5, size = 0.2) + 
+  theme_bw() +
+  guides(colour = FALSE) +
+  labs(title = "t-SNE (with TRUE labels)")
+
+labels.cent <- mapping %>% 
+  dplyr::group_by(label) %>%
+  select(dim1, dim2) %>% 
+  summarize_all(mean)
+    
+ggp.tsne <- ggp +
+  ggrepel::geom_label_repel(
+    data = labels.cent,
+    aes(label = label),
+    label.size = 0.1)
+
+ggp.tsne
+
+ggsave(ggp.tsne, filename =  "./output/000_t-SNE.png",
        height = 4, width = 4)
 
 ```
 
-![](output/000_tSNE.png)
+![](output/000_t-SNE.png)
 
 ```{r}
 ggp.tsne.nolabel <- mapping.tsne %>% 
   plot.tsne(
     # label = as.factor(train.label),
-    title = "tSNE (without labels)")
+    title = "t-SNE (without labels)")
 # mapping.tsne %>% str
 # ggp.tsne.nolabel$plot
 
-ggsave(ggp.tsne.nolabel$plot, filename =  "./output/000_tSNE_nolabel.png",
+ggsave(ggp.tsne.nolabel$plot, filename =  "./output/000_t-SNE_nolabel.png",
        height = 4, width = 4)
 
 ```
 
-![](output/000_tSNE_nolabel.png)
+![](output/000_t-SNE_nolabel.png)
 
 # Hierarchical clustering
 
@@ -194,38 +220,37 @@ ggdend.tsne.hc <- ggdendrogram(mapping.tsne.hc, rotate = TRUE, size = 2) +
 ggsave(ggdend.tsne.hc, filename =  "./output/000_tsne_hclust.png",
        height = 4, width = 4)
 
+group.by.hclust <- mapping.tsne.hc %>%
+  cutree(h = cut.off) %>%
+  factor()
+
+
 ```
 
 ![](./output/000_tsne_hclust.png)
 
 ```{r}
-require(ggrepel)
-
-group.by.hclust <- mapping.tsne.hc %>%
-  cutree(h = cut.off) %>%
-  factor()
-
 ggp.tsne.hc <- mapping.tsne %>% 
   plot.tsne(
     label = as.factor(LETTERS[group.by.hclust]),
-    title = "tSNE (group by hclast)")
+    title = "t-SNE (group by hclust)")
 
 # ggp.tsne.hc$plot
 
 ```
 
-```{r, fig.height=7, fig.width=7, results="hide"}
+```{r, results="hide"}
 ggp.tsne.compare <- gridExtra::arrangeGrob(
   grobs = list(
-    ggp.tsne$plot, ggp.tsne.hc$plot
+    ggp.tsne, ggp.tsne.hc$plot
   ),
   ncol = 2
 )
 
-ggsave(ggp.tsne.compare, filename =  "./output/000_tSNE_compare.png",
+ggsave(ggp.tsne.compare, filename =  "./output/000_t-SNE_compare.png",
        height = 4, width = 8)
 
 ```
 
-![](output/000_tSNE_compare.png)
+![](output/000_t-SNE_compare.png)
 

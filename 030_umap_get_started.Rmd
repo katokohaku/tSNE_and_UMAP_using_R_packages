@@ -26,7 +26,7 @@ knitr::opts_knit$set(progress = TRUE,
                      root.dir = ".")
 
 knitr::opts_chunk$set(collapse = TRUE, 
-                      comment = "", 
+                      comment = "#> ", 
                       message = TRUE, 
                       warning = FALSE, 
                       include = TRUE,
@@ -40,13 +40,14 @@ install.packages("Rtsne", dependencies = TRUE)
 install.packages("uwot", dependencies = TRUE)
 install.packages("ggdendro", dependencies = TRUE)
 install.packages("ggrepel", dependencies = TRUE)
+install.packages("dbscan", dependencies = TRUE)
 
 ```
 
 ```{r require.packages, message=FALSE}
 require(tidyverse)
 require(magrittr)
-require(xgboost)
+require(dbscan)
 
 require(Rtsne)
 require(uwot)
@@ -57,42 +58,50 @@ require(ggrepel)
 
 # Preparation 
 
-Optical Recognition of Handwritten Digits Data Set
+Using MNIST (test set) as csv fromat was downloaded from :
 
-https://archive.ics.uci.edu/ml/datasets/Optical+Recognition+of+Handwritten+Digits
+https://github.com/pjreddie/mnist-csv-png
 
-```{r load.data}
-optdigits.tra  <- read.table("./input/optdigits.tra.csv", sep = ",", header = FALSE)
+```{r}
+set.seed(1)
 
-train.label  <- optdigits.tra[, 65]
-train.matrix <- optdigits.tra[, -65] %>% as.matrix
+require(tidyverse)
+require(Rtsne)
+load("./input/mnist_sample.rda")
+
+train.label  <- mnist.sample[,  1]
+train.matrix <- mnist.sample[, -1] %>% as.matrix
+
+n <- NROW(train.matrix)
+train.matrix %>% str(0)
 
 ```
 
-## dimension reduction using UMAP
+# dimension reduction using UMAP
 
 according to :
 https://rdrr.io/cran/uwot/man/umap.html
 
 
-# With no option
+## With no tune
+
 ```{r}
 plot.umap <- function(.umap, label = NULL, title = "") {
   
   mapping.umap <- data.frame(
-    id     = 1:NROW(optdigits.umap),
-    dim1  = optdigits.umap[, 1],
-    dim2  = optdigits.umap[, 2])
+    id     = 1:NROW(.umap),
+    dim1  = .umap[, 1],
+    dim2  = .umap[, 2])
   
   ggp.umap <- mapping.umap %>% 
     ggplot(aes(x = dim1, y = dim2, colour = label)) + 
-    geom_point(alpha = 0.3) + 
+    geom_point(alpha = 0.5, size = 0.2) + 
     theme_bw() +
     guides(colour = FALSE) +
     labs(title = title)
   
   if(!is.null(label)){
-    mapping.umap$label = as.factor(train.label)
+    mapping.umap$label = as.factor(label)
     
     labels.cent <- mapping.umap %>% 
       dplyr::group_by(label) %>%
@@ -114,58 +123,120 @@ plot.umap <- function(.umap, label = NULL, title = "") {
 ```
 
 ```{r}
-optdigits.umap <- train.matrix %>% 
-  uwot::umap()
-
-ggp.umap <- optdigits.umap %>% 
-  plot.umap(
-    label = as.factor(train.label),
-    title = "non-supervised UMAP (with TRUE labels)" )
-# 
-ggp.umap$plot
-
-
-
-ggsave(ggp.umap, filename =  "./output/010_umap_unsupervised_with_label.png",
-       height = 5, width = 5)
+res.umap <- train.matrix %>% 
+  uwot::umap(verbose = TRUE)
 
 ```
-
-![](output/010_umap_unsupervised_with_label.png)
-
-### supervised dimension reduction
 
 ```{r}
-optdigits.sumap <- train.matrix %>% 
-  uwot::umap(y = train.label)
-
-mapping.sumap <- data.frame(
-  id     = 1:length(optdigits.sumap),
-  dim1  = optdigits.sumap[, 1],
-  dim2  = optdigits.sumap[, 2],
-  label = as.factor(train.label))
-
-labels.cent <- mapping.sumap %>% 
-  dplyr::group_by(label) %>%
-  select(dim1, dim2) %>% 
-  summarize_all(mean)
-
-ggp.sumap <- mapping.sumap %>% 
-  ggplot(aes(x = dim1, y = dim2, colour = label)) + 
-  geom_point(alpha = 0.3) + 
-  theme_bw() +
-  ggrepel::geom_label_repel(data = labels.cent,
-                            aes(label = label),
-                            label.size = 0.1) +
-  guides(colour = FALSE) +
-  labs(title = "supervised UMAP") 
-
-ggsave(ggp.sumap, filename = "./output/010_umap_supervised_with_label.png",
-       height = 5, width = 5)
+res.umap <- train.matrix %>% 
+  uwot::umap(verbose = TRUE, n_threads = 1)
 
 ```
 
-![](output/010_umap_supervised_with_label.png)
+```{r}
+ggp.umap <- res.umap %>% 
+  plot.umap(
+    label = as.factor(train.label),
+    title = "UMAP (with TRUE labels)" )
+# ggp.umap$plot
+
+ggsave(ggp.umap$plot, filename =  "./output/030_umap_unsupervised_with_label.png",
+       height = 4, width = 4)
+
+```
+
+![](output/030_umap_unsupervised_with_label.png)
+
+
+```{r}
+res.umap.pca <- train.matrix %>% 
+  uwot::umap(verbose = TRUE, pca = 50)
+
+```
+
+```{r}
+ggp.umap.pca <- res.umap.pca %>% 
+  plot.umap(
+    label = as.factor(train.label),
+    title = "PCA + UMAP (with TRUE labels)" )
+# ggp.umap$plot
+
+ggsave(ggp.umap.pca$plot, filename =  "./output/030_umap_unsupervised_with_pca.png",
+       height = 4, width = 4)
+
+```
+
+![](output/030_umap_unsupervised_with_pca.png)
+
+
+```{r}
+res.umap.cosine <- train.matrix %>% 
+  uwot::umap(verbose = TRUE, metric = "cosine")
+
+```
+
+```{r}
+ggp.umap.cosine <- res.umap.cosine %>% 
+  plot.umap(
+    label = as.factor(train.label),
+    title = "UMAP with cosine distance (with TRUE labels)" )
+# ggp.umap$plot
+
+ggsave(ggp.umap.cosine$plot, filename =  "./output/030_umap_unsupervised_with_cosine.png",
+       height = 4, width = 4)
+
+```
+
+![](output/030_umap_unsupervised_with_cosine.png)
+
+# Hierarchical clustering
+
+```{r }
+mapping.umap.hc <- ggp.umap$mapping %>% 
+  select(-id) %>% 
+  as.matrix() %>% 
+  dist() %>% 
+  hclust()
+mapping.umap.hc
+```
+
+## explore cut.off for cutree
+
+```{r}
+library(ggdendro)
+
+cut.off = 7
+
+ggdend.umap.hc <- ggdendrogram(mapping.umap.hc, rotate = TRUE, size = 2) +
+  geom_hline(yintercept = cut.off, color = "red")
+
+ggsave(ggdend.umap.hc, filename =  "./output/030_umap_hclust.png",
+       height = 4, width = 4)
+
+```
+
+![](./output/030_umap_hclust.png)
+
+```{r}
+require(ggrepel)
+
+group.by.hclust <- mapping.umap.hc %>%
+  cutree(h = cut.off)
+
+ggp.umap.hc <- res.umap %>% 
+  plot.umap(
+    label = as.factor(LETTERS[group.by.hclust]),
+    title = "umap (group by hclast)")
+
+# ggp.umap.hc$plot
+ggsave(ggp.umap.hc$plot, 
+       filename =  "./output/030_umap_clustering_by_hclust.png",
+       height = 4, width = 4)
+
+```
+
+![](./output/030_umap_clustering_by_hclust.png)
 
 ## Hierarchical Density-based spatial clustering of applications with noise (HDBSCAN)
 
@@ -186,10 +257,10 @@ require(dbscan)
 `minPts` not only acts as a minimum cluster size to detect, but also as a "smoothing" factor of the density estimates implicitly computed from HDBSCAN.
 
 ```{r }
-# mapping.sumap %>% str
-cl.hdbscan <- mapping.sumap %>% 
+# res.umap %>% str
+cl.hdbscan <- ggp.umap$mapping %>% 
   select(dim1, dim2) %>% 
-  hdbscan(minPts = 30)
+  dbscan::hdbscan(minPts = 22)
 cl.hdbscan
 
 plot(cl.hdbscan, show_flat = TRUE)
@@ -200,29 +271,30 @@ plot(cl.hdbscan, show_flat = TRUE)
 # install.packages("ggrepel", dependencies = TRUE)
 require(ggrepel)
 
-mapping.sumap$hdbscan <- factor(cl.hdbscan$cluster)
+ggp.umap$mapping$hdbscan <- factor(cl.hdbscan$cluster)
 
-hdbscan.cent <- mapping.sumap %>% 
+hdbscan.cent <- ggp.umap$mapping %>% 
   filter(hdbscan != 0) %>% 
   dplyr::group_by(hdbscan) %>%
   select(dim1, dim2) %>% 
   summarize_all(mean)
 
-ggp.sumap.hdbscan <- mapping.sumap %>% 
+ggp.umap.hdbscan <- ggp.umap$mapping %>% 
   ggplot(aes(x = dim1, y = dim2, colour = hdbscan)) + 
-  geom_point(alpha = 0.3) + 
+  geom_point(alpha = 0.5, size = 0.2) + 
   theme_bw() +
   ggrepel::geom_label_repel(data = hdbscan.cent, 
-                            aes(label = hdbscan),
+                            aes(label = LETTERS[hdbscan]),
                             label.size = 0.1) + 
   guides(colour = FALSE) + 
-  labs(title = "supervised UMAP + HDBSCAN") 
+  labs(title = "UMAP + HDBSCAN") 
 
-
-ggsave(ggp.sumap.hdbscan, filename =  "./output/010_map_sumap_hdbscan.png",
-       height = 7, width = 7)
+ggp.umap.hdbscan
+ggsave(ggp.umap.hdbscan, 
+       filename =  "./output/030_umap_clustering_by_hdbscan.png",
+       height = 4, width = 4)
 
 ```
 
-![](output/010_map_sumap_hdbscan.png)
+![](output/030_umap_clustering_by_hdbscan.png)
 
